@@ -10,6 +10,7 @@ using System.IO;
 using System.Timers;
 using System.Diagnostics;
 using System.Threading;
+using System.Windows.Media.Effects;
 
 namespace PathTracing
 {
@@ -30,9 +31,9 @@ namespace PathTracing
 
         static readonly Boolean AntiAliasing = true;
         static readonly Boolean Recursion = true;
-        static readonly int CustomScene = 0;
+        static readonly int CustomScene = 2;
         //iterations * 5 = rays per pixel on average
-        static int iterations = 10;
+        static readonly int iterations = 10;
 
         [STAThread]
         static void Main(string[] args)
@@ -257,7 +258,7 @@ namespace PathTracing
                         if (sphere.bitmap != null)
                         {
                             Vector3 sphereNormal = Vector3.Normalize(h - sphere.Center);
-                            int x = (int)((sphere.bitmap.Width - 1) * ((Math.Atan2(sphereNormal.X, sphereNormal.Z) + Math.PI) / (2 * Math.PI)));
+                            int x = (int)((sphere.bitmap.Width - 1) * ((Math.Atan2(sphereNormal.Z, sphereNormal.X) + Math.PI) / (2 * Math.PI)));
                             int y = (int)((sphere.bitmap.Height - 1) * (Math.Acos(sphereNormal.Y) / Math.PI));
                             System.Drawing.Color color = sphere.bitmap.GetPixel(x, y);
                             diffusion.X = (float)Math.Pow(color.R / 255f, 2.2f);
@@ -317,7 +318,21 @@ namespace PathTracing
             }
             else if (CustomScene == 2)
             {
-                list.Add(new MySphere(new Vector3(0, 0, 0), 0.9, new Vector3(0, 0, 0), new Vector3(0.1f, 0.1f, 0), new Vector3(0, 0, 0), new Bitmap("ore_texture.jpg"))); //glowing uranium sphere
+                list.Add(new MySphere(new Vector3(40, 20, 150), 5, new Vector3(0.7f, 0.7f, 0.7f), new Vector3(0, 0, 0), new Vector3(0, 0, 0), new Bitmap("2k_mercury.jpg"))); //moon
+                list.Add(new MySphere(new Vector3(-20, -20, 120), 10, new Vector3(0.3f, 0.3f, 0.7f), new Vector3(0, 0, 0), new Vector3(0, 0, 0), new Bitmap("2k_jupiter.jpg"))); //blue moon
+                list.Add(new MySphere(new Vector3(0, 0, 200), 50, new Vector3(1, 0.5f, 0), new Vector3(0, 0, 0), new Vector3(0, 0, 0), new Bitmap("2k_earth_daymap.jpg"))); //earth
+                list.Add(new MySphere(new Vector3(1300, 0, 200), 1000, new Vector3(1, 0.5f, 0), new Vector3(2, 1.7f, 1.5f), new Vector3(0, 0, 0))); //sun
+            }
+            else if(CustomScene == 3)
+            {
+                list.Add(new MySphere(new Vector3(-101, 0, 0), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //left wall
+                list.Add(new MySphere(new Vector3(101, 0, 0), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //right wall
+                list.Add(new MySphere(new Vector3(0, -101, 0), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //bottom wall
+                list.Add(new MySphere(new Vector3(0, 101, 0), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //top wall
+                list.Add(new MySphere(new Vector3(0, 1.95f, 0), 1.1, new Vector3(1, 1, 1), new Vector3(2, 2, 2), new Vector3(0, 0, 0))); //lightsource
+                list.Add(new MySphere(new Vector3(0, 0, 0), 0.5, new Vector3(0.5f, 0, 0), new Vector3(0, 0, 0), new Vector3(1, 0, 0))); //oxygen ball
+                list.Add(new MySphere(new Vector3(0.394f, 0.307f, 0), 0.3, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(1, 1, 1))); //hydrogen ball
+                list.Add(new MySphere(new Vector3(-0.394f, 0.307f, 0), 0.3, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(1, 1, 1))); //hydrogen ball
             }
             else
             {

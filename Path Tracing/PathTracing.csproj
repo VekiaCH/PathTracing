@@ -60,6 +60,15 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="2k_earth_daymap.jpg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="2k_jupiter.jpg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="2k_mercury.jpg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="block.bmp">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
