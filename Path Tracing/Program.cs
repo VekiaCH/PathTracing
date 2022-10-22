@@ -5,6 +5,8 @@ using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Windows;
 using System.Numerics;
+using System.Drawing;
+using System.IO;
 
 namespace PathTracing
 {
@@ -12,7 +14,7 @@ namespace PathTracing
     {
         static WriteableBitmap writeableBitmap;
         static Window w;
-        static Image i;
+        static System.Windows.Controls.Image i;
 
         static Vector3 Eye = new Vector3(0, 0, -4);
         static Vector3 LookAt = new Vector3(0, 0, 6);
@@ -20,36 +22,43 @@ namespace PathTracing
         static List<MySphere> spheres;
         static readonly Random random = new Random();
 
-        static readonly int windowWidth = 512;
-        static readonly int windowHeight = 512;
+        static readonly int imageWidth = 128;
+        static readonly int imageHeight = 128;
+
+        static readonly Boolean AntiAliasing = false;
+        static readonly Boolean Recursion = true;
+        static readonly int CustomScene = 0;
 
         [STAThread]
         static void Main(string[] args)
         {
-            i = new Image();
+            i = new System.Windows.Controls.Image();
             RenderOptions.SetBitmapScalingMode(i, BitmapScalingMode.NearestNeighbor);
             RenderOptions.SetEdgeMode(i, EdgeMode.Aliased);
 
             w = new Window
             {
-                Title = "Cornell Box | Path Tracing",
-                Width = windowWidth,
-                Height = windowHeight,
+                Title = "Cornell Box | Bitmap Textures",
+                Width = imageWidth,
+                Height = imageHeight + 31,
                 Content = i
             };
 
             writeableBitmap = new WriteableBitmap(
-                windowWidth,
-                windowHeight,
+                imageWidth,
+                imageHeight,
                 96,
                 96,
                 PixelFormats.Bgr32,
                 null);
 
             i.Source = writeableBitmap;
+            
             spheres = CreateListOfSpheres();
             Vector3 eyeRay;
             Vector3 color;
+
+            //iterations * 5 = rays per pixel on average
             int iterations = 1000;
 
             Console.WriteLine("Drawing image...");
@@ -61,24 +70,50 @@ namespace PathTracing
                     color.X = 0;
                     color.Y = 0;
                     color.Z = 0;
-                    eyeRay = CreateEyeRay(j - windowWidth / 2, k - windowHeight / 2);
+                    eyeRay = CreateEyeRay(j - imageWidth / 2, k - imageHeight / 2);
 
-                    for(int p = 0; p < iterations; p++)
+                    if (Recursion)
                     {
-                        color += ComputeColor(Eye, eyeRay);
-                    }
+                        for (int p = 0; p < iterations; p++)
+                        {
+                            color += ComputeColor(Eye, eyeRay);
+                        }
 
-                    color /= (float)iterations;
-                    ColorPixel(j, k, color);
+                        color /= (float)iterations;
+                        ColorPixel(j, k, color);
+                    } 
+                    
+                    else
+                    {
+                        ColorPixel(j, k, FindClosestHitPoint(spheres, Eye, eyeRay).Diffusion);
+                    }
                 }
             }
 
             Console.WriteLine("Done!");
             w.Show();
 
+            SaveToBitmap();
+
             Application app = new Application();
             app.Run();
+        }
 
+        //saves the image to the source folder (only for IDE purposes)
+        private static void SaveToBitmap()
+        {
+            BitmapEncoder encoder = new BmpBitmapEncoder();
+            RenderTargetBitmap rtb = new RenderTargetBitmap((int)i.ActualWidth, (int)i.ActualHeight, 96d, 96d, PixelFormats.Default);
+            System.Windows.Size imageSize = new System.Windows.Size(i.ActualWidth, i.ActualHeight);
+            i.Measure(imageSize);
+            i.Arrange(new Rect(imageSize));
+            rtb.Render(i);
+            encoder.Frames.Add(BitmapFrame.Create(rtb));
+            
+            using (var stream = File.Create("..//..//last_image.bmp"))
+            {
+                encoder.Save(stream);
+            }
         }
 
         private static Vector3 ComputeColor(Vector3 origin, Vector3 direction)
@@ -86,6 +121,7 @@ namespace PathTracing
             HitPoint hp = FindClosestHitPoint(spheres, origin, direction);
             Vector3 maxVector = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
 
+            //if no hitpoint was found it returns black
             if (hp.Point.Equals(maxVector))
             {
                 return new Vector3(0,0,0);
@@ -98,6 +134,7 @@ namespace PathTracing
                 {
                     return hp.Emission;
                 }
+
                 else
                 {
                     Vector3 randomDirection = GenerateRandomDirection(hp);
@@ -130,7 +167,7 @@ namespace PathTracing
         private static Vector3 BRDF(HitPoint hp, Vector3 randomDirection)
         {
             Vector3 reflectionHP = CalculateReflection(hp);
-            if(Vector3.Dot(Vector3.Normalize(reflectionHP), Vector3.Normalize(randomDirection)) > 1.0f - 0.01f)
+            if(Vector3.Dot(Vector3.Normalize(reflectionHP), Vector3.Normalize(randomDirection)) > 1.0f - 0.05f)
             {
                 return (hp.Diffusion + 10 * hp.Specular) * (float)(1.0 / Math.PI);
             }
@@ -203,13 +240,24 @@ namespace PathTracing
                         specular = sphere.Specular;
                         sphereCenter = sphere.Center;
                         h = origin + lambda * Vector3.Normalize(direction);
+                        if (sphere.bitmap != null)
+                        {
+                            Vector3 sphereNormal = Vector3.Normalize(h - sphere.Center);
+                            int x = (int)((sphere.bitmap.Width - 1) * ((Math.Atan2(sphereNormal.X, sphereNormal.Z) + Math.PI) / (2 * Math.PI)));
+                            int y = (int)((sphere.bitmap.Height - 1) * (Math.Acos(sphereNormal.Y) / Math.PI));
+                            System.Drawing.Color color = sphere.bitmap.GetPixel(x, y);
+                            diffusion.X = (float)Math.Pow(color.R / 255f, 2.2f);
+                            diffusion.Y = (float)Math.Pow(color.G / 255f, 2.2f);
+                            diffusion.Z = (float)Math.Pow(color.B / 255f, 2.2f);
+                        }
                     }
                 }
             }
+
             return new HitPoint(h, direction, diffusion, emission, specular, sphereCenter);
         }
 
-        private static Vector3 CreateEyeRay(int x, int y)
+        private static Vector3 CreateEyeRay(float x, float y)
         {
             Vector3 Up = new Vector3(0, 1, 0);
             Vector3 r;
@@ -218,24 +266,47 @@ namespace PathTracing
             f = LookAt - Eye;
             r = Vector3.Cross(Up, f);
             u = Vector3.Cross(f, r);
+            if (AntiAliasing)
+            {
+                x += ((float)random.NextDouble() - 0.5f)/2f;
+                y += ((float)random.NextDouble() - 0.5f)/2f;
+            }
             Vector3 eyeRay;
             float tan = (float)Math.Tan((FOV / 2) * Math.PI / 180.0);
             eyeRay = Vector3.Normalize(f)
-                + Vector3.Normalize(r) * (tan * x / (windowWidth / 2))
-                + Vector3.Normalize(u) * (tan * -y / (windowHeight / 2));
+                + Vector3.Normalize(r) * (tan * x / (imageWidth / 2f))
+                + Vector3.Normalize(u) * (tan * -y / (imageHeight / 2f));
             return eyeRay;
         }
 
         private static List<MySphere> CreateListOfSpheres()
         {
             List<MySphere> list = new List<MySphere>();
-            list.Add(new MySphere(new Vector3(-1001, 0, 0), 1000, new Vector3(0.5f, 0, 0), new Vector3(0, 0, 0), new Vector3(0.5f, 0.5f, 0.5f))); //red
-            list.Add(new MySphere(new Vector3(1001, 0, 0), 1000, new Vector3(0, 0, 0.5f), new Vector3(0, 0, 0), new Vector3(0.5f, 0.5f, 0.5f))); //blue
-            list.Add(new MySphere(new Vector3(0, 0, 1001), 1000, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //gray
-            list.Add(new MySphere(new Vector3(0, -1001, 0), 1000, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //gray
-            list.Add(new MySphere(new Vector3(0, 1001, 0), 1000, new Vector3(1, 1, 1), new Vector3(2, 2, 2), new Vector3(0, 0, 0))); //lightsource
-            list.Add(new MySphere(new Vector3(-0.6f, -0.7f, -0.6f), 0.3, new Vector3(0.5f, 0.5f, 0), new Vector3(0, 0, 0), new Vector3(0.3f, 0.3f, 0.3f))); //yellow
-            list.Add(new MySphere(new Vector3(0.3f, -0.4f, 0.3f), 0.6, new Vector3(0, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0.8f, 0.8f, 0.8f))); //lightcyan
+            if(CustomScene == 1)
+            {
+                list.Add(new MySphere(new Vector3(-101, 0, 0), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //left wall
+                list.Add(new MySphere(new Vector3(101, 0, 0), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //right wall
+                list.Add(new MySphere(new Vector3(0, 0, 101), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); // back wall
+                list.Add(new MySphere(new Vector3(0, -101, 0), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //bottom wall
+                list.Add(new MySphere(new Vector3(0, 101, 0), 100, new Vector3(0.3f, 0.3f, 0.3f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //top wall
+                list.Add(new MySphere(new Vector3(0, 0, -101), 100, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(2, 2, 2), new Vector3(0, 0, 0))); //front wall
+                list.Add(new MySphere(new Vector3(0, 0, 0), 0.9, new Vector3(0, 0, 0), new Vector3(0.1f, 0.1f, 0), new Vector3(0, 0, 0), new Bitmap("ore_texture.jpg"))); //glowing uranium sphere
+            }
+            else if (CustomScene == 2)
+            {
+                list.Add(new MySphere(new Vector3(0, 0, 0), 0.9, new Vector3(0, 0, 0), new Vector3(0.1f, 0.1f, 0), new Vector3(0, 0, 0), new Bitmap("ore_texture.jpg"))); //glowing uranium sphere
+            }
+            else
+            {
+                list.Add(new MySphere(new Vector3(-1001, 0, 0), 1000, new Vector3(0.5f, 0, 0), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //red
+                list.Add(new MySphere(new Vector3(1001, 0, 0), 1000, new Vector3(0, 0, 0.5f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //blue
+                list.Add(new MySphere(new Vector3(0, 0, 1001), 1000, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //gray
+                list.Add(new MySphere(new Vector3(0, -1001, 0), 1000, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //gray
+                list.Add(new MySphere(new Vector3(0, 1001, 0), 1000, new Vector3(1, 1, 1), new Vector3(2, 2, 2), new Vector3(0, 0, 0))); //lightsource
+                list.Add(new MySphere(new Vector3(-0.6f, -0.7f, -0.6f), 0.3, new Vector3(0.5f, 0.5f, 0), new Vector3(0, 0, 0), new Vector3(0.3f, 0.3f, 0.3f))); //yellow
+                list.Add(new MySphere(new Vector3(0.3f, -0.4f, 0.3f), 0.6, new Vector3(0, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0.8f, 0.8f, 0.8f))); //lightcyan
+            }
+            
             return list;
         }
     }
@@ -246,8 +317,9 @@ namespace PathTracing
         public double Radius { get; set; }
         public Vector3 Diffusion { get; set; }
         public Vector3 Emission { get; set; }
-
         public Vector3 Specular { get; set; }
+        public Bitmap bitmap { get; set; }
+
         public MySphere(Vector3 c, double r, Vector3 diffusion, Vector3 emission, Vector3 specular)
         {
             Center = c;
@@ -255,6 +327,17 @@ namespace PathTracing
             Diffusion = diffusion;
             Emission = emission;
             Specular = specular;
+            bitmap = null;
+        }
+
+        public MySphere(Vector3 c, double r, Vector3 diffusion, Vector3 emission, Vector3 specular, Bitmap bmp)
+        {
+            Center = c;
+            Radius = r;
+            Diffusion = diffusion;
+            Emission = emission;
+            Specular = specular;
+            bitmap = bmp;
         }
     }
 
