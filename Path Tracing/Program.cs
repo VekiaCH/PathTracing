@@ -10,6 +10,7 @@ using System.IO;
 using System.Timers;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace PathTracing
 {
@@ -32,7 +33,9 @@ namespace PathTracing
         static readonly Boolean Recursion = true;
         static readonly int CustomScene = 0;
         //iterations * 5 = rays per pixel on average
-        static int iterations = 10;
+        static int iterations = 1000;
+
+        static Vector3 color;
 
         [STAThread]
         static void Main(string[] args)
@@ -60,7 +63,7 @@ namespace PathTracing
             i.Source = writeableBitmap;
             
             spheres = CreateListOfSpheres();
-            Vector3 color;
+            
 
             double percentDoneNow;
             double percentDonePrev = 0;
@@ -79,12 +82,11 @@ namespace PathTracing
 
                     if (Recursion)
                     {
-                        for (int p = 0; p < iterations; p++)
-                        {
-                            color += ComputeColor(Eye, CreateEyeRay(j - imageWidth / 2, k - imageHeight / 2));
-                        }
-
+                        AsyncComputeColor(k, j);
+                        
                         color /= (float)iterations;
+
+
                         ColorPixel(j, k, color);
                     } 
                     
@@ -95,7 +97,7 @@ namespace PathTracing
                 }
 
                 percentDoneNow = k / (double)writeableBitmap.PixelHeight * 100.0;
-                if(Math.Round(percentDoneNow, 0) > Math.Round(percentDonePrev, 0) + 5)
+                if(Math.Round(percentDoneNow, 0) > Math.Round(percentDonePrev, 0))
                 {
                     ts = stopwatch.Elapsed;
                     Console.WriteLine(Math.Round(percentDoneNow, 1) + "%");
@@ -111,6 +113,15 @@ namespace PathTracing
 
             Application app = new Application();
             app.Run();
+        }
+
+        private static async Task AsyncComputeColor(int k, int j)
+        {
+            for (int i = 0; i < iterations; i++)
+            {
+                Vector3 d = CreateEyeRay(j - imageWidth / 2, k - imageHeight / 2);
+                color += await ComputeColor(Eye, d);
+            }
         }
 
         //saves the image to the source folder (only for IDE purposes)
@@ -130,7 +141,7 @@ namespace PathTracing
             }
         }
 
-        private static Vector3 ComputeColor(Vector3 origin, Vector3 direction)
+        private async static Task<Vector3> ComputeColor(Vector3 origin, Vector3 direction)
         {
             HitPoint hp = FindClosestHitPoint(spheres, origin, direction);
             Vector3 maxVector = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
@@ -152,10 +163,9 @@ namespace PathTracing
                 else
                 {
                     Vector3 randomDirection = GenerateRandomDirection(hp);
-                    return hp.Emission + ((float)(2 * Math.PI * Vector3.Dot(Vector3.Normalize(randomDirection), Vector3.Normalize(hp.Point - hp.SphereCenter)) / (1.0 - 0.2)) * BRDF(hp, randomDirection) * ComputeColor(hp.Point, randomDirection));
+                    return hp.Emission + ((float)(2 * Math.PI * Vector3.Dot(Vector3.Normalize(randomDirection), Vector3.Normalize(hp.Point - hp.SphereCenter)) / (1.0 - 0.2)) * BRDF(hp, randomDirection) * await ComputeColor(hp.Point, randomDirection));
                 }
             }
-           
         }
 
         private static Vector3 GenerateRandomDirection(HitPoint hp)
