@@ -7,6 +7,9 @@ using System.Windows;
 using System.Numerics;
 using System.Drawing;
 using System.IO;
+using System.Timers;
+using System.Diagnostics;
+using System.Threading;
 
 namespace PathTracing
 {
@@ -22,12 +25,14 @@ namespace PathTracing
         static List<MySphere> spheres;
         static readonly Random random = new Random();
 
-        static readonly int imageWidth = 128;
-        static readonly int imageHeight = 128;
+        static readonly int imageWidth = 512;
+        static readonly int imageHeight = 512;
 
-        static readonly Boolean AntiAliasing = false;
+        static readonly Boolean AntiAliasing = true;
         static readonly Boolean Recursion = true;
         static readonly int CustomScene = 0;
+        //iterations * 5 = rays per pixel on average
+        static int iterations = 10;
 
         [STAThread]
         static void Main(string[] args)
@@ -38,7 +43,7 @@ namespace PathTracing
 
             w = new Window
             {
-                Title = "Cornell Box | Bitmap Textures",
+                Title = "Cornell Box | Anti-Aliasing",
                 Width = imageWidth,
                 Height = imageHeight + 31,
                 Content = i
@@ -55,12 +60,13 @@ namespace PathTracing
             i.Source = writeableBitmap;
             
             spheres = CreateListOfSpheres();
-            Vector3 eyeRay;
             Vector3 color;
 
-            //iterations * 5 = rays per pixel on average
-            int iterations = 1000;
+            double percentDoneNow;
+            double percentDonePrev = 0;
 
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            TimeSpan ts;
             Console.WriteLine("Drawing image...");
 
             for (int k = 0; k < writeableBitmap.PixelHeight; k++)
@@ -70,13 +76,12 @@ namespace PathTracing
                     color.X = 0;
                     color.Y = 0;
                     color.Z = 0;
-                    eyeRay = CreateEyeRay(j - imageWidth / 2, k - imageHeight / 2);
 
                     if (Recursion)
                     {
                         for (int p = 0; p < iterations; p++)
                         {
-                            color += ComputeColor(Eye, eyeRay);
+                            color += ComputeColor(Eye, CreateEyeRay(j - imageWidth / 2, k - imageHeight / 2));
                         }
 
                         color /= (float)iterations;
@@ -85,22 +90,31 @@ namespace PathTracing
                     
                     else
                     {
-                        ColorPixel(j, k, FindClosestHitPoint(spheres, Eye, eyeRay).Diffusion);
+                        ColorPixel(j, k, FindClosestHitPoint(spheres, Eye, CreateEyeRay(j - imageWidth / 2, k - imageHeight / 2)).Diffusion);
                     }
                 }
-            }
 
+                percentDoneNow = k / (double)writeableBitmap.PixelHeight * 100.0;
+                if(Math.Round(percentDoneNow, 0) > Math.Round(percentDonePrev, 0) + 5)
+                {
+                    ts = stopwatch.Elapsed;
+                    Console.WriteLine(Math.Round(percentDoneNow, 1) + "%");
+                    Console.WriteLine("Elapsed Time is {0:00}:{1:00}:{2:00}.{3}",
+                        ts.Hours, ts.Minutes, ts.Seconds, ts.Milliseconds);
+                    percentDonePrev = percentDoneNow;
+                } 
+            }
             Console.WriteLine("Done!");
             w.Show();
 
-            SaveToBitmap();
+            Save();
 
             Application app = new Application();
             app.Run();
         }
 
         //saves the image to the source folder (only for IDE purposes)
-        private static void SaveToBitmap()
+        private static void Save()
         {
             BitmapEncoder encoder = new BmpBitmapEncoder();
             RenderTargetBitmap rtb = new RenderTargetBitmap((int)i.ActualWidth, (int)i.ActualHeight, 96d, 96d, PixelFormats.Default);
@@ -110,7 +124,7 @@ namespace PathTracing
             rtb.Render(i);
             encoder.Frames.Add(BitmapFrame.Create(rtb));
             
-            using (var stream = File.Create("..//..//last_image.bmp"))
+            using (var stream = File.Create("..//..//last_image.png"))
             {
                 encoder.Save(stream);
             }
@@ -167,7 +181,7 @@ namespace PathTracing
         private static Vector3 BRDF(HitPoint hp, Vector3 randomDirection)
         {
             Vector3 reflectionHP = CalculateReflection(hp);
-            if(Vector3.Dot(Vector3.Normalize(reflectionHP), Vector3.Normalize(randomDirection)) > 1.0f - 0.05f)
+            if(Vector3.Dot(Vector3.Normalize(reflectionHP), Vector3.Normalize(randomDirection)) > 1.0f - 0.01f)
             {
                 return (hp.Diffusion + 10 * hp.Specular) * (float)(1.0 / Math.PI);
             }
@@ -268,8 +282,8 @@ namespace PathTracing
             u = Vector3.Cross(f, r);
             if (AntiAliasing)
             {
-                x += ((float)random.NextDouble() - 0.5f)/2f;
-                y += ((float)random.NextDouble() - 0.5f)/2f;
+                x += (float)randomGaussian();
+                y += (float)randomGaussian();
             }
             Vector3 eyeRay;
             float tan = (float)Math.Tan((FOV / 2) * Math.PI / 180.0);
@@ -277,6 +291,15 @@ namespace PathTracing
                 + Vector3.Normalize(r) * (tan * x / (imageWidth / 2f))
                 + Vector3.Normalize(u) * (tan * -y / (imageHeight / 2f));
             return eyeRay;
+        }
+
+        private static double randomGaussian()
+        {
+            double x1 = 1.0 - random.NextDouble();
+            double x2 = 1.0 - random.NextDouble();
+            double randomNormal = Math.Sqrt(-2.0 * Math.Log(x1)) * Math.Sin(2.0 * Math.PI * x2);
+            double sigma = 0.5;
+            return randomNormal * sigma;
         }
 
         private static List<MySphere> CreateListOfSpheres()
@@ -303,8 +326,8 @@ namespace PathTracing
                 list.Add(new MySphere(new Vector3(0, 0, 1001), 1000, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //gray
                 list.Add(new MySphere(new Vector3(0, -1001, 0), 1000, new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0, 0, 0))); //gray
                 list.Add(new MySphere(new Vector3(0, 1001, 0), 1000, new Vector3(1, 1, 1), new Vector3(2, 2, 2), new Vector3(0, 0, 0))); //lightsource
-                list.Add(new MySphere(new Vector3(-0.6f, -0.7f, -0.6f), 0.3, new Vector3(0.5f, 0.5f, 0), new Vector3(0, 0, 0), new Vector3(0.3f, 0.3f, 0.3f))); //yellow
-                list.Add(new MySphere(new Vector3(0.3f, -0.4f, 0.3f), 0.6, new Vector3(0, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0.8f, 0.8f, 0.8f))); //lightcyan
+                list.Add(new MySphere(new Vector3(-0.6f, -0.7f, -0.6f), 0.3, new Vector3(0.5f, 0.5f, 0), new Vector3(0, 0, 0), new Vector3(0.4f, 0.4f, 0.4f))); //yellow
+                list.Add(new MySphere(new Vector3(0.3f, -0.4f, 0.3f), 0.6, new Vector3(0, 0.5f, 0.5f), new Vector3(0, 0, 0), new Vector3(0.4f, 0.4f, 0.4f))); //lightcyan
             }
             
             return list;
